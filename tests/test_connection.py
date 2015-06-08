@@ -3,7 +3,7 @@
 
 import tornado.testing
 import tornado.ioloop
-import toro
+import tornado.queues
 import errno
 import socket
 from tornadis.connection import Connection
@@ -104,7 +104,17 @@ class AbstractConnectionTestCase(tornado.testing.AsyncTestCase):
         test_redis_uds_or_raise_skiptest()
         super(AbstractConnectionTestCase, self).setUp()
         self.reader = hiredis.Reader()
-        self.reply_queue = toro.Queue()
+        self.reply_queue = tornado.queues.Queue()
+        self.replies = []
+
+    def get_new_ioloop(self):
+        return tornado.ioloop.IOLoop.instance()
+
+    @tornado.testing.gen_test
+    def test_init(self):
+        c = Connection(self._read_cb, self._close_cb)
+        yield c.connect()
+        c.disconnect()
 
     def _close_cb(self):
         pass
