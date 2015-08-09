@@ -6,6 +6,7 @@
 
 import socket
 import os
+from datetime import datetime
 import tornado.iostream
 import tornado.gen
 from tornado.util import errno_from_exception
@@ -45,6 +46,7 @@ class Connection(object):
                  read_page_size=tornadis.DEFAULT_READ_PAGE_SIZE,
                  write_page_size=tornadis.DEFAULT_WRITE_PAGE_SIZE,
                  connect_timeout=tornadis.DEFAULT_CONNECT_TIMEOUT,
+                 write_timeout=tornadis.DEFAULT_WRITE_TIMEOUT,
                  tcp_nodelay=False, aggressive_write=False, ioloop=None):
         """Constructor.
 
@@ -58,6 +60,8 @@ class Connection(object):
             read_page_size (int): page size for reading.
             write_page_size (int): page size for writing.
             connect_timeout (int): timeout (in seconds) for connecting.
+            write_timeout (int): timeout (in seconds) for writing something
+                to the socket (0, default, means no timeout).
             tcp_nodelay (boolean): set TCP_NODELAY on socket.
             aggressive_write (boolean): try to minimize write latency over
                 global throughput (default False).
@@ -76,10 +80,12 @@ class Connection(object):
         self.read_page_size = read_page_size
         self.write_page_size = write_page_size
         self.connect_timeout = connect_timeout
+        self.write_timeout = write_timeout
         self.tcp_nodelay = tcp_nodelay
         self.aggressive_write = aggressive_write
         self._write_buffer = WriteBuffer()
         self._listened_events = 0
+        self.__last_write_requested = None
 
     def _redis_server(self):
         if self.unix_domain_socket:
@@ -147,6 +153,13 @@ class Connection(object):
         if self.is_connecting():
             dt = self._state.get_last_state_change_timedelta()
             if dt.total_seconds() > self.connect_timeout:
+                LOG.warning("connect timeout to %s", self._redis_server())
+                self.disconnect()
+        if self.write_timeout > 0 and self.__last_write_requested is not None:
+            dt = datetime.now() - self.__last_write_requested
+            if dt.total_seconds() > self.write_timeout:
+                LOG.warning("write timeout to %s => disconnecting",
+                            self._redis_server())
                 self.disconnect()
 
     def _register_or_update_event_handler(self, write=True):
@@ -179,6 +192,7 @@ class Connection(object):
         """
         if not self.is_connected() and not self.is_connecting():
             return
+        self.__last_write_requested = None
         LOG.debug("disconnecting from %s...", self._redis_server())
         self.__periodic_callback.stop()
         try:
@@ -284,4 +298,5 @@ class Connection(object):
         if self.aggressive_write:
             self._handle_write()
         if self._write_buffer._total_length > 0:
+            self.__last_write_requested = datetime.now()
             self._register_or_update_event_handler(write=True)
