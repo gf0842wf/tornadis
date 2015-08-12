@@ -105,16 +105,6 @@ class AbstractConnectionTestCase(tornado.testing.AsyncTestCase):
         super(AbstractConnectionTestCase, self).setUp()
         self.reader = hiredis.Reader()
         self.reply_queue = tornado.queues.Queue()
-        self.replies = []
-
-    def get_new_ioloop(self):
-        return tornado.ioloop.IOLoop.instance()
-
-    @tornado.testing.gen_test
-    def test_init(self):
-        c = Connection(self._read_cb, self._close_cb)
-        yield c.connect()
-        c.disconnect()
 
     def _close_cb(self):
         pass
